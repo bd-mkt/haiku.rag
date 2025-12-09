@@ -272,7 +272,7 @@ class HaikuRAG:
             await self.chunk_repository.create(chunks)
 
             # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
+            # asyncio.create_task(self.store.vacuum())
 
             return created_doc
         except Exception:
@@ -323,7 +323,7 @@ class HaikuRAG:
             await self.chunk_repository.create(chunks)
 
             # Vacuum old versions in background (non-blocking)
-            asyncio.create_task(self.store.vacuum())
+            # asyncio.create_task(self.store.vacuum())
 
             return updated_doc
         except Exception:
