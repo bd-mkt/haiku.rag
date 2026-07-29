@@ -1,4 +1,7 @@
 import json
+import logging
+import os
+import time
 from datetime import datetime
 from typing import overload
 from uuid import uuid4
@@ -14,6 +17,26 @@ from haiku.rag.store.engine import (
 )
 from haiku.rag.store.models.document import Document
 from haiku.rag.utils import escape_sql_string
+
+logger = logging.getLogger(__name__)
+
+# Opt-in per-document trace for list_all(include_content=True). Set
+# HAIKU_RAG_LIST_DEBUG=1 to log each doc as it is loaded (index, id, uri, blob
+# size, RSS, elapsed) -- pinpoints a stall to a specific document and shows
+# whether resident memory climbs toward a cap. Off (unset) by default.
+_LIST_DEBUG = bool(os.environ.get("HAIKU_RAG_LIST_DEBUG"))
+
+
+def _rss_mb() -> int:
+    """Resident set size in MiB from /proc (Linux); -1 if unavailable."""
+    try:
+        with open("/proc/self/status") as fh:
+            for line in fh:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1]) // 1024
+    except OSError:
+        pass
+    return -1
 
 
 class DocumentRepository:
@@ -349,7 +372,21 @@ class DocumentRepository:
             ]
 
         documents: list[Document] = []
-        for meta in meta_records:
+        total = len(meta_records)
+        start = time.monotonic()
+        for index, meta in enumerate(meta_records, 1):
+            # Logged BEFORE the query so a stall leaves the last "loading" line
+            # (with no matching "loaded") pointing at the exact culprit doc.
+            if _LIST_DEBUG:
+                logger.info(
+                    "list_all loading %d/%d id=%s uri=%s rss=%dMB t=%.1fs",
+                    index,
+                    total,
+                    meta.id,
+                    meta.uri,
+                    _rss_mb(),
+                    time.monotonic() - start,
+                )
             safe_id = escape_sql_string(meta.id)
             doc_results = await query_to_pydantic(
                 self.store.documents_table.query().where(f"id = '{safe_id}'").limit(1),
@@ -360,6 +397,20 @@ class DocumentRepository:
                 if doc_results
                 else DocumentRecord(id=meta.id, content="")
             )
+            if _LIST_DEBUG:
+                blob = doc_record.docling_document
+                pages = doc_record.docling_pages
+                logger.info(
+                    "list_all loaded  %d/%d uri=%s content=%dB doc=%dKB "
+                    "pages=%dKB rss=%dMB",
+                    index,
+                    total,
+                    meta.uri,
+                    len(doc_record.content or ""),
+                    (len(blob) // 1024) if blob else 0,
+                    (len(pages) // 1024) if pages else 0,
+                    _rss_mb(),
+                )
             documents.append(self._merge_to_document(doc_record, meta))
         return documents
 
