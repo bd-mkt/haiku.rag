@@ -160,6 +160,7 @@ def create_capability(
     defer_loading: bool = True,
     request_limit: int | None = 30,
     vision: bool | None = None,
+    base_filter: str | None = None,
 ) -> AnalysisCapability:
     """Create a native Pydantic AI analysis capability.
 
@@ -167,6 +168,10 @@ def create_capability(
     images, and should reflect the model the hosting agent actually runs.
     Defaults to ``config.analysis.model.vision`` (falling back to
     ``config.qa.model.vision``).
+
+    ``base_filter`` is a mandatory SQL WHERE clause intersected with the
+    caller-controlled ``document_filter`` on every search, and applies to
+    sandboxed code as well, since the sandbox shares this client.
     """
     if config is None:
         from haiku.rag.config import get_config
@@ -182,6 +187,7 @@ def create_capability(
         vision=analysis_model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
+        base_filter=base_filter,
         id=_CAPABILITY_ID,
         description=(
             "Analyze the haiku.rag corpus with search and sandboxed Python code. "

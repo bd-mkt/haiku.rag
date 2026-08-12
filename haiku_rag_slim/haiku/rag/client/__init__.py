@@ -26,6 +26,7 @@ from haiku.rag.store.repositories.chunk import ChunkRepository
 from haiku.rag.store.repositories.document import DocumentRepository
 from haiku.rag.store.repositories.document_item import DocumentItemRepository
 from haiku.rag.store.repositories.settings import SettingsRepository
+from haiku.rag.utils import and_filters
 from haiku.rag.utils import escape_sql_string
 
 if TYPE_CHECKING:
@@ -71,6 +72,7 @@ class HaikuRAG:
         skip_validation: bool = False,
         create: bool = False,
         read_only: bool = False,
+        base_filter: str | None = None,
     ):
         """Initialize the RAG client with a database path.
 
@@ -80,8 +82,12 @@ class HaikuRAG:
             skip_validation: Whether to skip configuration validation on database load.
             create: Whether to create the database if it doesn't exist.
             read_only: Whether to open the database in read-only mode.
+            base_filter: Optional mandatory SQL WHERE clause intersected with
+                the `filter` of every read on this client. Scopes the client to
+                a document subset that callers below it cannot widen.
         """
         self._config = config
+        self._base_filter = base_filter
         if db_path is None:
             db_path = self._config.storage.data_dir / "haiku.rag.lancedb"
 
@@ -97,6 +103,15 @@ class HaikuRAG:
     def is_read_only(self) -> bool:
         """Whether the client is in read-only mode."""
         return self.store.is_read_only
+
+    @property
+    def base_filter(self) -> str | None:
+        """Mandatory WHERE clause intersected with every read on this client."""
+        return self._base_filter
+
+    def _scoped_filter(self, filter: str | None) -> str | None:
+        """Narrow a caller-supplied filter by this client's base filter."""
+        return and_filters(self._base_filter, filter)
 
     @property
     def embedder(self) -> "EmbedderWrapper":
@@ -446,7 +461,10 @@ class HaikuRAG:
             List of Document instances matching the criteria.
         """
         return await self.document_repository.list_all(
-            limit=limit, offset=offset, filter=filter, include_content=include_content
+            limit=limit,
+            offset=offset,
+            filter=self._scoped_filter(filter),
+            include_content=include_content,
         )
 
     async def count_documents(self, filter: str | None = None) -> int:
@@ -458,7 +476,9 @@ class HaikuRAG:
         Returns:
             Number of documents matching the criteria.
         """
-        return await self.document_repository.count(filter=filter)
+        return await self.document_repository.count(
+            filter=self._scoped_filter(filter)
+        )
 
     async def search(
         self,
@@ -470,7 +490,14 @@ class HaikuRAG:
     ) -> list[SearchResult]:
         from haiku.rag.client.search import search
 
-        return await search(self, query, limit, search_type, filter, include_images)
+        return await search(
+            self,
+            query,
+            limit,
+            search_type,
+            self._scoped_filter(filter),
+            include_images,
+        )
 
     async def expand_context(
         self,
@@ -488,7 +515,7 @@ class HaikuRAG:
     ) -> "tuple[str, list[Citation]]":
         from haiku.rag.client.agents import ask
 
-        return await ask(self, question, filter, images)
+        return await ask(self, question, self._scoped_filter(filter), images)
 
     async def analyze(
         self,
@@ -498,7 +525,7 @@ class HaikuRAG:
     ) -> "AnalysisResult":
         from haiku.rag.client.agents import analyze
 
-        return await analyze(self, question, filter, images)
+        return await analyze(self, question, self._scoped_filter(filter), images)
 
     async def visualize_chunk(
         self,

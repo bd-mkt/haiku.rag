@@ -72,12 +72,17 @@ def create_capability(
     defer_loading: bool = True,
     request_limit: int | None = 20,
     vision: bool | None = None,
+    base_filter: str | None = None,
 ) -> RAGCapability:
     """Create a native Pydantic AI RAG capability.
 
     ``vision`` gates whether picture chunks are attached to search results as
     images, and should reflect the model the hosting agent actually runs.
     Defaults to ``config.qa.model.vision``.
+
+    ``base_filter`` is a mandatory SQL WHERE clause intersected with the
+    caller-controlled ``document_filter`` on every search, scoping the
+    capability to a document subset the host cannot widen.
     """
     if config is None:
         from haiku.rag.config import get_config
@@ -92,6 +97,7 @@ def create_capability(
         vision=config.qa.model.vision if vision is None else vision,
         tool_names=_TOOL_NAMES,
         request_limit=request_limit,
+        base_filter=base_filter,
         id=_CAPABILITY_ID,
         description=(
             "Search the haiku.rag knowledge base and cite evidence for grounded answers."

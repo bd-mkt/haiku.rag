@@ -472,6 +472,21 @@ def escape_sql_string(value: str) -> str:
     return value.replace("'", "''")
 
 
+def and_filters(base: str | None, extra: str | None) -> str | None:
+    """Intersect two SQL WHERE clauses, parenthesizing each operand.
+
+    Used to apply a mandatory base filter on top of a caller-supplied one.
+    Both sides are wrapped because `AND` binds tighter than `OR`: without the
+    parentheses an operand containing a top-level `OR` would widen the result
+    rather than narrow it.
+    """
+    if not base:
+        return extra
+    if not extra:
+        return base
+    return f"({base}) AND ({extra})"
+
+
 def get_package_versions() -> dict[str, str]:
     """Get versions of haiku.rag and its dependencies.
 

@@ -134,6 +134,7 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
     vision: bool
     tool_names: frozenset[str]
     request_limit: int | None = None
+    base_filter: str | None = None
     state: StateT | None = field(default=None, repr=False)
     outer_state: dict[str, Any] | None = field(default=None, repr=False)
     rag: HaikuRAG | None = field(default=None, repr=False)
@@ -301,7 +302,12 @@ class RAGCapabilityBase[StateT: BaseModel](AbstractCapability[Any]):
         if self.rag is None:
             async with self.resource_lock:
                 if self.rag is None:
-                    rag = HaikuRAG(self.db_path, config=self.config, read_only=True)
+                    rag = HaikuRAG(
+                        self.db_path,
+                        config=self.config,
+                        read_only=True,
+                        base_filter=self.base_filter,
+                    )
                     await rag.__aenter__()
                     self.rag = rag
         return self.rag
